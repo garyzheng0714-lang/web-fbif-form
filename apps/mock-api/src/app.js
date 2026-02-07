@@ -81,12 +81,27 @@ export function createApp() {
 
     return res.status(202).json({
       id: submission.id,
-      syncStatus: submission.syncStatus
+      syncStatus: submission.syncStatus,
+      statusToken: submission.statusToken
+    });
+  });
+
+  app.post('/api/uploads/presign', (req, res) => {
+    const csrfHeader = req.headers['x-csrf-token'];
+    const csrfCookie = req.cookies.mock_csrf;
+
+    if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
+      return res.status(403).json({ error: 'Invalid CSRF token' });
+    }
+
+    return res.status(503).json({
+      error: 'Upload service not configured'
     });
   });
 
   app.get('/api/submissions/:id/status', (req, res) => {
-    const submission = getSubmission(req.params.id);
+    const statusToken = typeof req.query.statusToken === 'string' ? req.query.statusToken : '';
+    const submission = getSubmission(req.params.id, statusToken);
 
     if (!submission) {
       return res.status(404).json({ error: 'Not Found' });
@@ -97,7 +112,8 @@ export function createApp() {
       syncStatus: submission.syncStatus,
       syncError: submission.syncError,
       feishuRecordId: submission.feishuRecordId,
-      createdAt: submission.createdAt
+      createdAt: submission.createdAt,
+      pollAfterMs: submission.syncStatus === 'PENDING' ? 1500 : 0
     });
   });
 

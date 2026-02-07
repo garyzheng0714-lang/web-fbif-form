@@ -95,6 +95,70 @@ async function parseJsonIfPossible(response: Response): Promise<any | null> {
   }
 }
 
+function createIdempotencyKey(identity: Exclude<Identity, ''>) {
+  const browserUuid = window.crypto?.randomUUID?.();
+  const fallbackUuid = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `web-${identity}-${browserUuid || fallbackUuid}`;
+}
+
+async function uploadProofFiles(
+  files: File[],
+  csrfToken: string,
+  fallbackNames: string[]
+): Promise<string[]> {
+  if (!files.length) return fallbackNames;
+
+  const uploadedKeys: string[] = [];
+
+  for (const file of files) {
+    const presignResp = await fetch(`${API_BASE}/api/uploads/presign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        size: file.size
+      })
+    });
+
+    const presignData = await parseJsonIfPossible(presignResp);
+    if (!presignResp.ok) {
+      if (presignResp.status === 503) {
+        return fallbackNames.length ? fallbackNames : files.map((item) => item.name);
+      }
+      throw new Error('presign_failed');
+    }
+
+    if (!presignData?.uploadUrl || !presignData?.key) {
+      throw new Error('invalid_presign_response');
+    }
+
+    const uploadHeaders = new Headers();
+    if (presignData.headers && typeof presignData.headers === 'object') {
+      Object.entries(presignData.headers).forEach(([key, value]) => {
+        uploadHeaders.set(key, String(value));
+      });
+    }
+
+    const uploadResp = await fetch(String(presignData.uploadUrl), {
+      method: 'PUT',
+      headers: uploadHeaders,
+      body: file
+    });
+    if (!uploadResp.ok) {
+      throw new Error('upload_failed');
+    }
+
+    uploadedKeys.push(String(presignData.key));
+  }
+
+  return uploadedKeys;
+}
+
 function validateIdNumber(idType: IdType, idNumber: string) {
   const normalized = idNumber.trim();
   if (!idType) return '请选择证件类型';
@@ -167,6 +231,7 @@ export default function App() {
   const [identity, setIdentity] = useState<Identity>('');
   const [industryForm, setIndustryForm] = useState(initialIndustryForm);
   const [consumerForm, setConsumerForm] = useState(initialConsumerForm);
+  const [proofUploadFiles, setProofUploadFiles] = useState<File[]>([]);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [notice, setNotice] = useState<Notice>('');
@@ -282,6 +347,9 @@ export default function App() {
     setSubmitAttempted(false);
     setTouched({});
     setIsProofDragOver(false);
+    if (next !== 'industry') {
+      setProofUploadFiles([]);
+    }
     setIsSwitching(true);
     switchTimerRef.current = window.setTimeout(() => {
       setIsSwitching(false);
@@ -302,7 +370,9 @@ export default function App() {
   };
 
   const updateProofFiles = (files: FileList | null) => {
-    const names = Array.from(files || []).map((file) => file.name);
+    const selectedFiles = Array.from(files || []);
+    const names = selectedFiles.map((file) => file.name);
+    setProofUploadFiles(selectedFiles);
     setIndustryForm((prev) => ({ ...prev, proofFiles: names }));
     markTouched(fieldKey('industry', 'proofFiles'));
   };
@@ -320,10 +390,15 @@ export default function App() {
     }
   };
 
-  const pollStatus = async (id: string): Promise<boolean> => {
+  const pollStatus = async (id: string, statusToken: string): Promise<boolean> => {
     const startedAt = Date.now();
+    let nextDelayMs = 1200;
+
     while (Date.now() - startedAt <= SYNC_TIMEOUT_MS) {
-      const resp = await fetch(`${API_BASE}/api/submissions/${id}/status`, {
+      const statusUrl = new URL(`${API_BASE}/api/submissions/${id}/status`);
+      statusUrl.searchParams.set('statusToken', statusToken);
+
+      const resp = await fetch(statusUrl.toString(), {
         credentials: 'include'
       });
 
@@ -344,8 +419,11 @@ export default function App() {
         return false;
       }
 
-      // Poll every 1.5s until timeout or terminal state.
-      await sleep(1500);
+      const suggestedDelay = typeof data.pollAfterMs === 'number' && data.pollAfterMs > 0
+        ? data.pollAfterMs
+        : nextDelayMs;
+      await sleep(suggestedDelay);
+      nextDelayMs = Math.min(Math.floor(suggestedDelay * 1.5), 5000);
     }
 
     return false;
@@ -378,6 +456,12 @@ export default function App() {
         throw new Error('csrf_failed');
       }
 
+      const proofFiles = identity === 'industry'
+        ? await uploadProofFiles(proofUploadFiles, csrfData.csrfToken, industryForm.proofFiles)
+        : [];
+
+      const idempotencyKey = createIdempotencyKey(identity);
+
       const payload = identity === 'industry'
         ? {
             phone: industryForm.phone.trim(),
@@ -389,7 +473,7 @@ export default function App() {
             idType: industryForm.idType,
             businessType: industryForm.businessType,
             department: industryForm.department,
-            proofFileNames: industryForm.proofFiles
+            proofFiles
           }
         : {
             phone: consumerForm.phone.trim(),
@@ -405,24 +489,26 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfData.csrfToken
+          'X-CSRF-Token': csrfData.csrfToken,
+          'Idempotency-Key': idempotencyKey
         },
         credentials: 'include',
         body: JSON.stringify(payload)
       });
 
       const submitData = await parseJsonIfPossible(submitResp);
-      if (!submitResp.ok || !submitData?.id) {
+      if (!submitResp.ok || !submitData?.id || !submitData?.statusToken) {
         throw new Error('submit_failed');
       }
 
-      const ok = await pollStatus(submitData.id);
+      const ok = await pollStatus(submitData.id, submitData.statusToken);
       if (!ok) {
         throw new Error('sync_failed');
       }
 
       setIndustryForm(initialIndustryForm);
       setConsumerForm(initialConsumerForm);
+      setProofUploadFiles([]);
       setTouched({});
       setSubmitAttempted(false);
       setNotice('提交成功');
@@ -455,7 +541,12 @@ export default function App() {
   return (
     <div className="page">
       <div className="frame">
-        <img className="banner" src={TOP_BANNER_URL} alt="FBIF 食品创新展" />
+        <img
+          className="banner"
+          src={TOP_BANNER_URL}
+          alt="FBIF 食品创新展"
+          decoding="async"
+        />
 
         {page === 'identity' && (
           <section className="card role-card">
@@ -809,7 +900,7 @@ export default function App() {
               )}
             </section>
 
-            <img className="intro-image" src={INTRO_IMAGE_URL} alt="活动介绍" />
+            <img className="intro-image" src={INTRO_IMAGE_URL} alt="活动介绍" loading="lazy" decoding="async" />
           </>
         )}
       </div>

@@ -10,31 +10,51 @@
 { "csrfToken": "..." }
 ```
 
-## 提交表单
+## 提交表单（V2）
 `POST /api/submissions`
 
 Headers:
 - `Content-Type: application/json`
 - `X-CSRF-Token: <token>`
+- `Idempotency-Key: <8-128位字母数字下划线短横线>`（可选，建议客户端重试时复用）
 
 Body:
 ```json
 {
+  "role": "industry",
   "phone": "13800000000",
   "name": "张三",
+  "idType": "passport",
+  "idNumber": "A1234567",
   "title": "运营负责人",
   "company": "飞书科技有限公司",
-  "idNumber": "110101199003071234"
+  "businessType": "食品相关品牌方",
+  "department": "市场/销售/电商",
+  "proofFiles": ["proof-1.jpg", "proof-2.pdf"]
 }
 ```
 
+备注：
+- `role`: `industry | consumer`
+- `idType`: `cn_id | passport | other`
+- `consumer` 角色可省略 `businessType/department/proofFiles`。
+- 为兼容旧客户端，服务端仍可解析历史 V1 payload（仅基础 5 字段）。
+
 响应：
 ```json
-{ "id": "uuid", "syncStatus": "PENDING" }
+{
+  "id": "uuid",
+  "syncStatus": "PENDING",
+  "statusToken": "status-token",
+  "replayed": false
+}
 ```
 
-## 查询同步状态
-`GET /api/submissions/:id/status`
+## 查询同步状态（带 statusToken）
+`GET /api/submissions/:id/status?statusToken=<token>`
+
+备注：
+- 当 `ALLOW_LEGACY_STATUS_QUERY=false` 时，必须携带 `statusToken`。
 
 响应：
 ```json
@@ -43,6 +63,37 @@ Body:
   "syncStatus": "PENDING|SUCCESS|FAILED",
   "syncError": "...",
   "feishuRecordId": "...",
-  "createdAt": "2026-02-06T08:00:00.000Z"
+  "createdAt": "2026-02-06T08:00:00.000Z",
+  "pollAfterMs": 1500
 }
 ```
+
+## 获取上传预签名（可选能力）
+`POST /api/uploads/presign`
+
+Headers:
+- `Content-Type: application/json`
+- `X-CSRF-Token: <token>`
+
+Body:
+```json
+{
+  "filename": "proof.jpg",
+  "contentType": "image/jpeg",
+  "size": 123456
+}
+```
+
+响应（已配置 `UPLOAD_PRESIGN_BASE_URL` 时）：
+```json
+{
+  "key": "proof/1700000000000-...-proof.jpg",
+  "uploadUrl": "https://example-oss/prefix/proof/170...jpg",
+  "headers": {
+    "Content-Type": "image/jpeg"
+  },
+  "expiresInSeconds": 300
+}
+```
+
+未配置上传服务时返回 `503`，前端可回退提交文件名。

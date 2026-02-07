@@ -1,19 +1,8 @@
-import { Router, type RequestHandler } from 'express';
-import csurf from 'csurf';
-import { isProd } from '../config/env.js';
-
-const csrfProtection = csurf({
-  cookie: {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: isProd
-  }
-}) as unknown as RequestHandler;
+import { Router } from 'express';
+import { csrfGuard, issueCsrfToken } from '../middleware/csrf.js';
 
 export const csrfRouter = Router();
 
-csrfRouter.get('/', csrfProtection, (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
-});
+csrfRouter.get('/', issueCsrfToken);
 
-export const csrfGuard = csrfProtection;
+export { csrfGuard };

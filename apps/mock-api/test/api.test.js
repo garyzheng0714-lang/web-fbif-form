@@ -66,14 +66,19 @@ test('submission can be created and reaches SUCCESS status', async () => {
 
   assert.equal(submitRes.status, 202);
   assert.equal(typeof submitRes.body.id, 'string');
+  assert.equal(typeof submitRes.body.statusToken, 'string');
 
-  let statusRes = await request(app).get(`/api/submissions/${submitRes.body.id}/status`);
+  let statusRes = await request(app).get(
+    `/api/submissions/${submitRes.body.id}/status?statusToken=${submitRes.body.statusToken}`
+  );
   assert.equal(statusRes.status, 200);
   assert.equal(statusRes.body.syncStatus, 'PENDING');
 
   await sleep(1600);
 
-  statusRes = await request(app).get(`/api/submissions/${submitRes.body.id}/status`);
+  statusRes = await request(app).get(
+    `/api/submissions/${submitRes.body.id}/status?statusToken=${submitRes.body.statusToken}`
+  );
   assert.equal(statusRes.status, 200);
   assert.equal(statusRes.body.syncStatus, 'SUCCESS');
 });

@@ -13,15 +13,34 @@ enum SyncStatus {
   FAILED
 }
 
+enum SubmissionRole {
+  INDUSTRY
+  CONSUMER
+}
+
+enum SubmissionIdType {
+  CN_ID
+  PASSPORT
+  OTHER
+}
+
 model Submission {
   id            String     @id @default(uuid())
+  role          SubmissionRole
   name          String     @db.VarChar(64)
   title         String     @db.VarChar(64)
   company       String     @db.VarChar(128)
+  idType        SubmissionIdType
   phoneEnc      String     @db.Text
   phoneHash     String     @db.VarChar(64)
   idEnc         String     @db.Text
   idHash        String     @db.VarChar(64)
+  businessType  String?    @db.VarChar(64)
+  department    String?    @db.VarChar(64)
+  proofFilesJson String?   @db.Text
+  statusTokenHash String   @db.VarChar(64)
+  idempotencyKeyHash String? @unique @db.VarChar(64)
+  source        String     @default("web") @db.VarChar(32)
   syncStatus    SyncStatus @default(PENDING)
   syncError     String?    @db.Text
   feishuRecordId String?   @db.VarChar(64)
@@ -29,8 +48,11 @@ model Submission {
   userAgent     String?    @db.VarChar(256)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  archivedAt    DateTime?
 
   @@index([phoneHash])
   @@index([idHash])
   @@index([syncStatus])
+  @@index([statusTokenHash])
+  @@index([createdAt])
 }

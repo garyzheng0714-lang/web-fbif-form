@@ -45,10 +45,12 @@ function runMockSync(id) {
 
 export function createSubmission(record) {
   const id = crypto.randomUUID();
+  const statusToken = crypto.randomBytes(20).toString('base64url');
   const now = new Date().toISOString();
 
   const submission = {
     id,
+    statusToken,
     ...record,
     syncStatus: 'PENDING',
     syncError: null,
@@ -71,8 +73,13 @@ export function createSubmission(record) {
   return submission;
 }
 
-export function getSubmission(id) {
-  return submissions.get(id) || null;
+export function getSubmission(id, statusToken = '') {
+  const submission = submissions.get(id) || null;
+  if (!submission) return null;
+  if (statusToken && submission.statusToken !== statusToken) {
+    return null;
+  }
+  return submission;
 }
 
 export function clearSubmissions() {

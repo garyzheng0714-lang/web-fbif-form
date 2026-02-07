@@ -64,5 +64,9 @@ node scripts/local-stack.mjs status
 
 ## CI/CD 自动部署
 已支持 GitHub Actions 自动部署到阿里云（推送 `main` 自动触发）。
+当前发布链路为：
+- `apps/api`（API）+ `apps/api` Worker
+- `apps/web`（静态站点）
+- `apps/mock-api` 仅保留本地联调与测试用途
 
 说明文档：`/Library/vibecoding_home/fbif_form/docs/github-actions-deploy.md`

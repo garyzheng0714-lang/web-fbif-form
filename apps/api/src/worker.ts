@@ -4,6 +4,19 @@ import { prisma } from './utils/db.js';
 import { logger } from './utils/logger.js';
 import { createBitableRecord, mapToBitableFields } from './services/feishuService.js';
 import { decryptSubmissionSensitive, markSubmissionFailed, markSubmissionSuccess } from './services/submissionService.js';
+import { env } from './config/env.js';
+
+function mapRoleLabel(role: string) {
+  if (role === 'INDUSTRY') return '我是食品行业相关从业者';
+  if (role === 'CONSUMER') return '我是消费者';
+  return '';
+}
+
+function mapIdTypeLabel(idType: string) {
+  if (idType === 'CN_ID') return '中国居民身份证';
+  if (idType === 'PASSPORT') return '护照';
+  return '';
+}
 
 const worker = new Worker(
   'feishu-sync',
@@ -23,6 +36,8 @@ const worker = new Worker(
       title: submission.title,
       company: submission.company,
       idNumber: sensitive.idNumber,
+      roleLabel: mapRoleLabel(submission.role),
+      idTypeLabel: mapIdTypeLabel(submission.idType),
       submittedAt: submission.createdAt.toISOString(),
       syncStatus: '已同步'
     });
@@ -30,7 +45,10 @@ const worker = new Worker(
     const recordId = await createBitableRecord(fields);
     await markSubmissionSuccess(submission.id, recordId);
   },
-  { connection: redis }
+  {
+    connection: redis,
+    concurrency: env.WORKER_CONCURRENCY
+  }
 );
 
 worker.on('failed', async (job, err) => {

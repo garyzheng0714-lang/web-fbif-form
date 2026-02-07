@@ -3,9 +3,15 @@
 ## 生产建议架构
 - CDN：静态前端（`apps/web` 构建产物）接入 CDN
 - 负载均衡：Nginx/ALB 将 API 请求分发到多实例
-- API 多实例：`pm2` 或容器副本 + 自动扩缩
-- Redis：用于限流与异步队列
+- API 多实例：`apps/api` + `pm2` 或容器副本
+- Worker：独立进程运行 `apps/api` 的队列消费逻辑
+- Redis：限流与异步队列
 - PostgreSQL：主库 + 只读副本（按需）
+
+## 运行进程
+- `fbif-api`: `node dist/index.js`
+- `fbif-api-worker`: `node dist/worker.js`
+- `fbif-web`: `pm2 serve apps/web/dist 3001 --spa`
 
 ## 环境变量（API）
 - `DATABASE_URL` PostgreSQL 连接串
@@ -15,6 +21,14 @@
 - `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
 - `FEISHU_APP_TOKEN` 多维表格 app token（baseid）
 - `FEISHU_TABLE_ID` 表格 table id
+- `RATE_LIMIT_BACKEND` `auto|redis|memory|off`
+- `REDIS_REQUIRED` `true|false`
+- `ALLOW_LEGACY_STATUS_QUERY` `true|false`
+- `WORKER_CONCURRENCY` Worker 并发数
+
+## 健康检查
+- `GET /health/live`: 进程存活
+- `GET /health/ready`: 依赖就绪（DB/Redis）
 
 ## Nginx 示例
 ```nginx
@@ -50,5 +64,6 @@ upstream api_upstream {
 - API 使用 `helmet` + CORS 限制域名
 
 ## 异步任务
-- 单独运行 `npm run worker` 启动同步队列 Worker
-- 每个 API 实例不要重复启动 Worker，避免任务抢占不均
+- 单独运行 worker 进程，不与 API 混跑
+- 按环境调节 `WORKER_CONCURRENCY`
+- 关注队列积压、失败率、重试次数

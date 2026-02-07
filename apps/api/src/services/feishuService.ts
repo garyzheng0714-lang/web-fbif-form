@@ -3,13 +3,17 @@ import { env } from '../config/env.js';
 import { retry } from '../utils/retry.js';
 
 const fieldMap = {
-  name: process.env.FEISHU_FIELD_NAME || '姓名',
-  phone: process.env.FEISHU_FIELD_PHONE || '手机号',
-  title: process.env.FEISHU_FIELD_TITLE || '职位',
-  company: process.env.FEISHU_FIELD_COMPANY || '公司',
-  idNumber: process.env.FEISHU_FIELD_ID || '身份证号',
-  submittedAt: process.env.FEISHU_FIELD_SUBMITTED_AT || '提交时间',
-  syncStatus: process.env.FEISHU_FIELD_SYNC_STATUS || '同步状态'
+  // Defaults match the current Bitable table in /base/K0QibNTo...
+  name: process.env.FEISHU_FIELD_NAME || '姓名（问卷题）',
+  phone: process.env.FEISHU_FIELD_PHONE || '手机号（问卷题）',
+  title: process.env.FEISHU_FIELD_TITLE || '职位（问卷题）',
+  company: process.env.FEISHU_FIELD_COMPANY || '公司（问卷题）',
+  idNumber: process.env.FEISHU_FIELD_ID || '证件号码（问卷题）',
+  role: process.env.FEISHU_FIELD_ROLE || '观展身份',
+  idType: process.env.FEISHU_FIELD_ID_TYPE || '证件类型（问卷题）',
+  // Optional fields. Leave empty to skip writing these.
+  submittedAt: process.env.FEISHU_FIELD_SUBMITTED_AT || '',
+  syncStatus: process.env.FEISHU_FIELD_SYNC_STATUS || ''
 };
 
 const client = new lark.Client({
@@ -50,16 +54,34 @@ export function mapToBitableFields(input: {
   title: string;
   company: string;
   idNumber: string;
+  roleLabel?: string;
+  idTypeLabel?: string;
   submittedAt: string;
   syncStatus: string;
 }): Record<string, string> {
-  return {
+  const fields: Record<string, string> = {
     [fieldMap.name]: input.name,
     [fieldMap.phone]: input.phone,
     [fieldMap.title]: input.title,
     [fieldMap.company]: input.company,
     [fieldMap.idNumber]: input.idNumber,
-    [fieldMap.submittedAt]: input.submittedAt,
-    [fieldMap.syncStatus]: input.syncStatus
   };
+
+  if (fieldMap.role && input.roleLabel) {
+    fields[fieldMap.role] = input.roleLabel;
+  }
+
+  if (fieldMap.idType && input.idTypeLabel) {
+    fields[fieldMap.idType] = input.idTypeLabel;
+  }
+
+  if (fieldMap.submittedAt) {
+    fields[fieldMap.submittedAt] = input.submittedAt;
+  }
+
+  if (fieldMap.syncStatus) {
+    fields[fieldMap.syncStatus] = input.syncStatus;
+  }
+
+  return fields;
 }

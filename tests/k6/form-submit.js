@@ -29,10 +29,10 @@ export default function () {
 
   const base17 = `11010119900307${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
   const payload = {
+    role: 'consumer',
     phone: randomPhone(),
     name: '测试用户',
-    title: '运营负责人',
-    company: '测试公司',
+    idType: 'cn_id',
     idNumber: makeId(base17)
   };
 

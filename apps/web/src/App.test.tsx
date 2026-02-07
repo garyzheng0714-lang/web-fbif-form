@@ -62,7 +62,7 @@ describe('App dynamic form', () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'submission-id', syncStatus: 'PENDING' }, 202))
+      .mockResolvedValueOnce(jsonResponse({ id: 'submission-id', syncStatus: 'PENDING', statusToken: 'status-token' }, 202))
       .mockResolvedValueOnce(jsonResponse({ syncStatus: 'SUCCESS' }));
 
     render(<App />);
@@ -82,11 +82,15 @@ describe('App dynamic form', () => {
 
     const submitCall = fetchMock.mock.calls[1];
     const submitBody = JSON.parse(String(submitCall?.[1]?.body));
+    const submitHeaders = submitCall?.[1]?.headers as Record<string, string> | undefined;
+    const statusCallUrl = String(fetchMock.mock.calls[2]?.[0] || '');
 
     expect(submitBody.role).toBe('consumer');
     expect(submitBody.title).toBe('消费者');
     expect(submitBody.company).toBe('个人消费者');
     expect(submitBody.name).toBe('张三');
     expect(submitBody.phone).toBe('13800000000');
+    expect(submitHeaders?.['Idempotency-Key']).toMatch(/^web-consumer-/);
+    expect(statusCallUrl).toContain('statusToken=status-token');
   });
 });
