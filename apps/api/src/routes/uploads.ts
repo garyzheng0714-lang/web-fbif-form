@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { csrfGuard } from './csrf.js';
 import { env } from '../config/env.js';
+import { uploadBitableAttachment } from '../services/feishuService.js';
 
 const uploadSchema = z.object({
   filename: z.string().min(1).max(128),
@@ -15,6 +17,13 @@ function sanitizeFilename(filename: string) {
 }
 
 export const uploadsRouter = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024
+  }
+});
 
 uploadsRouter.post('/presign', csrfGuard, (req, res, next) => {
   try {
@@ -35,6 +44,32 @@ uploadsRouter.post('/presign', csrfGuard, (req, res, next) => {
         'Content-Type': input.contentType
       },
       expiresInSeconds: 300
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+uploadsRouter.post('/feishu', csrfGuard, upload.single('file'), async (req, res, next) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'file required' });
+    }
+
+    const safeName = sanitizeFilename(file.originalname || 'upload.bin');
+    const fileToken = await uploadBitableAttachment({
+      filename: safeName,
+      contentType: file.mimetype || 'application/octet-stream',
+      size: file.size,
+      buffer: file.buffer
+    });
+
+    return res.json({
+      fileToken,
+      name: safeName,
+      size: file.size,
+      contentType: file.mimetype || 'application/octet-stream'
     });
   } catch (err) {
     next(err);

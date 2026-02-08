@@ -111,6 +111,25 @@ async function uploadProofFiles(
   const uploadedKeys: string[] = [];
 
   for (const file of files) {
+    // Prefer Feishu upload (returns fileToken) so the Bitable "Attachment" field can be populated.
+    const form = new FormData();
+    form.append('file', file, file.name);
+
+    const feishuResp = await fetch(`${API_BASE}/api/uploads/feishu`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': csrfToken
+      },
+      credentials: 'include',
+      body: form
+    });
+
+    const feishuData = await parseJsonIfPossible(feishuResp);
+    if (feishuResp.ok && feishuData?.fileToken) {
+      uploadedKeys.push(String(feishuData.fileToken));
+      continue;
+    }
+
     const presignResp = await fetch(`${API_BASE}/api/uploads/presign`, {
       method: 'POST',
       headers: {

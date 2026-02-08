@@ -17,6 +17,7 @@ const fieldMap = {
   idType: process.env.FEISHU_FIELD_ID_TYPE || '证件类型（问卷题）',
   businessType: process.env.FEISHU_FIELD_BUSINESS_TYPE || '贵司的业务类型',
   department: process.env.FEISHU_FIELD_DEPARTMENT || '您所处的部门（问卷题）',
+  proof: process.env.FEISHU_FIELD_PROOF || '上传专业观众证明',
   submittedAt: process.env.FEISHU_FIELD_SUBMITTED_AT || '',
   syncStatus: process.env.FEISHU_FIELD_SYNC_STATUS || ''
 };
@@ -137,6 +138,16 @@ function mapFields(submission) {
     fields[fieldMap.department] = departmentLabelMap[submission.department] || submission.department;
   }
 
+  const proofFiles = Array.isArray(submission.proofFiles) ? submission.proofFiles : [];
+  const proofFileTokens = proofFiles
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item) => /^[A-Za-z0-9]{10,120}$/.test(item));
+
+  if (fieldMap.proof && proofFileTokens.length) {
+    fields[fieldMap.proof] = proofFileTokens.map((token) => ({ file_token: token }));
+  }
+
   if (fieldMap.submittedAt) {
     fields[fieldMap.submittedAt] = submission.createdAt;
   }
@@ -178,6 +189,46 @@ export async function createBitableRecord(submission) {
     }
 
     return recordId;
+  }, 3);
+}
+
+export async function uploadBitableAttachment(input) {
+  if (!hasFeishuConfig()) {
+    throw new Error('feishu config missing');
+  }
+
+  return retry(async () => {
+    const token = await getTenantAccessToken();
+    const form = new FormData();
+    const safeName = String(input.filename || 'upload.bin').slice(0, 128);
+    const contentType = String(input.contentType || 'application/octet-stream').slice(0, 128);
+    const size = Number(input.size || 0);
+
+    form.set('file_name', safeName);
+    form.set('parent_type', 'bitable_file');
+    form.set('parent_node', appToken);
+    form.set('size', String(size));
+    form.set('file', new Blob([input.buffer], { type: contentType }), safeName);
+
+    const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_all`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: form
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.code !== 0) {
+      throw new Error(`upload media failed: ${data.msg || response.statusText}`);
+    }
+
+    const fileToken = data?.data?.file_token;
+    if (!fileToken) {
+      throw new Error('upload media failed: missing file_token');
+    }
+
+    return fileToken;
   }, 3);
 }
 

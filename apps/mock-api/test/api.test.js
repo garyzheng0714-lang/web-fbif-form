@@ -38,6 +38,33 @@ test('POST /api/submissions rejects request without csrf', async () => {
   assert.equal(res.status, 403);
 });
 
+test('POST /api/uploads/feishu rejects request without csrf', async () => {
+  const res = await request(app)
+    .post('/api/uploads/feishu');
+
+  assert.equal(res.status, 403);
+});
+
+test('POST /api/uploads/feishu returns 400 (configured) or 503 (not configured)', async () => {
+  const csrfRes = await request(app).get('/api/csrf');
+  const cookie = csrfRes.headers['set-cookie'][0];
+  const token = csrfRes.body.csrfToken;
+
+  const res = await request(app)
+    .post('/api/uploads/feishu')
+    .set('Cookie', cookie)
+    .set('X-CSRF-Token', token);
+
+  const enabled = Boolean(
+    process.env.FEISHU_APP_ID &&
+    process.env.FEISHU_APP_SECRET &&
+    process.env.FEISHU_APP_TOKEN &&
+    process.env.FEISHU_TABLE_ID
+  );
+
+  assert.equal(res.status, enabled ? 400 : 503);
+});
+
 test('POST /api/submissions validates request body', async () => {
   const csrfRes = await request(app).get('/api/csrf');
   const cookie = csrfRes.headers['set-cookie'][0];

@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import multer from 'multer';
 import { createSubmission, getSubmission } from './store.js';
 import { validateSubmission } from './validation.js';
+import { isFeishuEnabled, uploadBitableAttachment } from './feishu.js';
 
 const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:4173';
 const latencyMs = Number(process.env.MOCK_API_LATENCY_MS || 120);
@@ -25,6 +27,36 @@ function shouldInjectHttpError(req) {
   if (errorRate > 0 && Math.random() < errorRate) return true;
   return false;
 }
+
+function csrfGuard(req, res, next) {
+  const csrfHeader = req.headers['x-csrf-token'];
+  const csrfCookie = req.cookies.mock_csrf;
+
+  if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+
+  return next();
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'application/pdf'
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error('Unsupported file type'));
+  }
+});
 
 export function createApp() {
   const app = express();
@@ -96,6 +128,32 @@ export function createApp() {
 
     return res.status(503).json({
       error: 'Upload service not configured'
+    });
+  });
+
+  app.post('/api/uploads/feishu', csrfGuard, (req, res, next) => {
+    if (!isFeishuEnabled()) {
+      return res.status(503).json({ error: 'Upload service not configured' });
+    }
+    return upload.single('file')(req, res, next);
+  }, async (req, res) => {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'file required' });
+    }
+
+    const fileToken = await uploadBitableAttachment({
+      filename: file.originalname || 'upload.bin',
+      contentType: file.mimetype || 'application/octet-stream',
+      size: file.size,
+      buffer: file.buffer
+    });
+
+    return res.json({
+      fileToken,
+      name: file.originalname || 'upload.bin',
+      size: file.size,
+      contentType: file.mimetype || 'application/octet-stream'
     });
   });
 
