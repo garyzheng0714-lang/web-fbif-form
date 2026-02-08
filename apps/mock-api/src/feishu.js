@@ -22,6 +22,8 @@ const fieldMap = {
   syncStatus: process.env.FEISHU_FIELD_SYNC_STATUS || ''
 };
 
+const FEISHU_UPLOAD_ALL_MAX_BYTES = 20 * 1024 * 1024;
+
 let tokenCache = {
   value: '',
   expiresAt: 0
@@ -197,35 +199,131 @@ export async function uploadBitableAttachment(input) {
     throw new Error('feishu config missing');
   }
 
-  return retry(async () => {
-    const token = await getTenantAccessToken();
-    const form = new FormData();
-    const safeName = String(input.filename || 'upload.bin').slice(0, 128);
-    const contentType = String(input.contentType || 'application/octet-stream').slice(0, 128);
-    const size = Number(input.size || 0);
+  const safeName = String(input.filename || 'upload.bin').slice(0, 128);
+  const contentType = String(input.contentType || 'application/octet-stream').slice(0, 128);
+  const buffer = input.buffer;
+  const size = Number(input.size || (buffer ? buffer.length : 0) || 0);
 
-    form.set('file_name', safeName);
-    form.set('parent_type', 'bitable_file');
-    form.set('parent_node', appToken);
-    form.set('size', String(size));
-    form.set('file', new Blob([input.buffer], { type: contentType }), safeName);
+  if (!buffer || !Buffer.isBuffer(buffer) || size <= 0) {
+    throw new Error('upload media failed: missing file buffer');
+  }
 
-    const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_all`, {
+  if (size <= FEISHU_UPLOAD_ALL_MAX_BYTES) {
+    return retry(async () => {
+      const token = await getTenantAccessToken();
+      const form = new FormData();
+
+      form.set('file_name', safeName);
+      form.set('parent_type', 'bitable_file');
+      form.set('parent_node', appToken);
+      form.set('size', String(size));
+      form.set('file', new Blob([buffer], { type: contentType }), safeName);
+
+      const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_all`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok || data.code !== 0) {
+        throw new Error(`upload media failed: ${data.msg || response.statusText}`);
+      }
+
+      const fileToken = data?.data?.file_token;
+      if (!fileToken) {
+        throw new Error('upload media failed: missing file_token');
+      }
+
+      return fileToken;
+    }, 3);
+  }
+
+  // For >20MB, use multipart upload.
+  const token = await getTenantAccessToken();
+  const prepare = await retry(async () => {
+    const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_prepare`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
       },
-      body: form
+      body: JSON.stringify({
+        file_name: safeName,
+        parent_type: 'bitable_file',
+        parent_node: appToken,
+        size
+      })
     });
 
     const data = await response.json();
     if (!response.ok || data.code !== 0) {
-      throw new Error(`upload media failed: ${data.msg || response.statusText}`);
+      throw new Error(`upload prepare failed: ${data.msg || response.statusText}`);
+    }
+
+    return data?.data || {};
+  }, 3);
+
+  const uploadId = prepare.upload_id;
+  const blockSize = prepare.block_size || 4 * 1024 * 1024;
+  const blockNum = prepare.block_num || Math.ceil(size / blockSize);
+
+  if (!uploadId || !blockSize || !blockNum) {
+    throw new Error('upload prepare failed: missing upload_id / block_size / block_num');
+  }
+
+  for (let seq = 0; seq < blockNum; seq += 1) {
+    const start = seq * blockSize;
+    const end = Math.min(size, start + blockSize);
+    const chunk = buffer.subarray(start, end);
+
+    // eslint-disable-next-line no-await-in-loop
+    await retry(async () => {
+      const form = new FormData();
+      form.set('upload_id', uploadId);
+      form.set('seq', String(seq));
+      form.set('size', String(chunk.length));
+      form.set('file', new Blob([chunk], { type: contentType }), safeName);
+
+      const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_part`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok || data.code !== 0) {
+        throw new Error(`upload part failed: ${data.msg || response.statusText}`);
+      }
+    }, 3);
+  }
+
+  return retry(async () => {
+    const token = await getTenantAccessToken();
+    const response = await fetch(`${FEISHU_BASE}/drive/v1/medias/upload_finish`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        upload_id: uploadId,
+        block_num: blockNum
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.code !== 0) {
+      throw new Error(`upload finish failed: ${data.msg || response.statusText}`);
     }
 
     const fileToken = data?.data?.file_token;
     if (!fileToken) {
-      throw new Error('upload media failed: missing file_token');
+      throw new Error('upload finish failed: missing file_token');
     }
 
     return fileToken;

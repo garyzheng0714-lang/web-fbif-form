@@ -10,6 +10,8 @@ import {
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const SYNC_TIMEOUT_MS = Number(import.meta.env.VITE_SYNC_TIMEOUT_MS || 30000);
 const FORM_DRAFT_KEY = 'fbif_form_draft_v2';
+const MAX_PROOF_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_PROOF_FILE_COUNT = 10;
 const TOP_BANNER_URL =
   'https://fbif-feishu-base.oss-cn-shanghai.aliyuncs.com/fbif-attachment-to-url/2026/02/tblMQeXvSGd7Hebf_YHcyINOqnzM9YxjJToK2RA_1770366619961/img_v3_02ul_3790aefe-c6b6-473f-9c05-97aa380983bg_1770366621905.jpg';
 const INTRO_IMAGE_URL =
@@ -251,6 +253,7 @@ export default function App() {
   const [industryForm, setIndustryForm] = useState(initialIndustryForm);
   const [consumerForm, setConsumerForm] = useState(initialConsumerForm);
   const [proofUploadFiles, setProofUploadFiles] = useState<File[]>([]);
+  const [proofUploadNotice, setProofUploadNotice] = useState('');
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [notice, setNotice] = useState<Notice>('');
@@ -366,6 +369,7 @@ export default function App() {
     setSubmitAttempted(false);
     setTouched({});
     setIsProofDragOver(false);
+    setProofUploadNotice('');
     if (next !== 'industry') {
       setProofUploadFiles([]);
     }
@@ -385,15 +389,33 @@ export default function App() {
     setSubmitAttempted(false);
     setTouched({});
     setIsProofDragOver(false);
+    setProofUploadNotice('');
     setIsSwitching(false);
   };
 
   const updateProofFiles = (files: FileList | null) => {
     const selectedFiles = Array.from(files || []);
-    const names = selectedFiles.map((file) => file.name);
-    setProofUploadFiles(selectedFiles);
+    const oversized = selectedFiles.filter((file) => file.size > MAX_PROOF_FILE_BYTES);
+    const validFiles = selectedFiles
+      .filter((file) => file.size <= MAX_PROOF_FILE_BYTES)
+      .slice(0, MAX_PROOF_FILE_COUNT);
+
+    const names = validFiles.map((file) => file.name);
+    setProofUploadFiles(validFiles);
     setIndustryForm((prev) => ({ ...prev, proofFiles: names }));
     markTouched(fieldKey('industry', 'proofFiles'));
+
+    if (oversized.length) {
+      setProofUploadNotice(`以下文件超过 50MB 已忽略：${oversized.map((file) => file.name).join('、')}`);
+      return;
+    }
+
+    if (selectedFiles.length > MAX_PROOF_FILE_COUNT) {
+      setProofUploadNotice(`最多上传 ${MAX_PROOF_FILE_COUNT} 个附件，已保留前 ${MAX_PROOF_FILE_COUNT} 个。`);
+      return;
+    }
+
+    setProofUploadNotice('');
   };
 
   const handleProofDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -739,7 +761,10 @@ export default function App() {
                       <p className="upload-title">拖拽文件到这里上传</p>
                       <p className="upload-subtitle">或点击选择文件（支持 JPG / PNG / PDF）</p>
                     </div>
-                    <p className="hint">支持名片、工作证、在职证明等材料。刷新后需重新选择文件。</p>
+                    <p className="hint">
+                      支持名片、工作证、在职证明等材料。单个文件最大 50MB，最多 10 个。刷新后需重新选择文件。
+                    </p>
+                    {proofUploadNotice && <p className="hint hint-warn">{proofUploadNotice}</p>}
                     {industryForm.proofFiles.length > 0 && (
                       <p className="selected-files">{industryForm.proofFiles.join('、')}</p>
                     )}

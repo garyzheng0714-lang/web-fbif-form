@@ -42,7 +42,7 @@ function csrfGuard(req, res, next) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize: 50 * 1024 * 1024
   },
   fileFilter: (_req, file, cb) => {
     const allowed = [

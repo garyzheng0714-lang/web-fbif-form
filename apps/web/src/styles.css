@@ -376,6 +376,10 @@ select:focus {
   line-height: 1.35rem;
 }
 
+.hint-warn {
+  color: var(--danger);
+}
+
 .selected-files {
   margin: 0;
   color: var(--deep-blue);

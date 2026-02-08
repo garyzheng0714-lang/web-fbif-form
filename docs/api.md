@@ -84,6 +84,9 @@ Body:
 }
 ```
 
+备注：
+- 文件大小限制：单个文件最大 **50MB**。
+
 响应（已配置 `UPLOAD_PRESIGN_BASE_URL` 时）：
 ```json
 {
@@ -104,6 +107,7 @@ Body:
 说明：
 - 该接口会把文件上传到飞书云空间（挂在当前多维表格 Base 下），并返回 `fileToken`。
 - 当多维表格字段类型为「附件」时，写入 record 需要使用 `[{ file_token }]`，因此 `POST /api/submissions` 的 `proofFiles` 建议传 `fileToken[]`。
+- 文件大小限制：单个文件最大 **50MB**（>20MB 时服务端使用分片上传）。
 
 Headers:
 - `X-CSRF-Token: <token>`
