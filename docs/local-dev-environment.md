@@ -61,6 +61,16 @@ VITE_SYNC_TIMEOUT_MS=30000
 - `MOCK_API_FORCE_SYNC_STATUS`：强制 `SUCCESS` 或 `FAILED`
 - `MOCK_API_HTTP_500_RATE`：随机 HTTP 500 概率（0~1），默认 `0`
 
+飞书多维表格同步（可选）：
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_APP_TOKEN`
+- `FEISHU_TABLE_ID`
+
+当上述变量配置齐全时：
+- mock-api 会把提交记录写入多维表格。
+- 前端上传“专业观众证明”会优先调用 `POST /api/uploads/feishu`，从而把附件写入多维表格的「附件」字段。
+
 ## 5. 自动化测试用例
 测试文件：`/Library/vibecoding_home/fbif_form/apps/mock-api/test/api.test.js`
 

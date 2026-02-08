@@ -97,3 +97,26 @@ Body:
 ```
 
 未配置上传服务时返回 `503`，前端可回退提交文件名。
+
+## 上传文件到飞书（用于多维表格附件字段）
+`POST /api/uploads/feishu`
+
+说明：
+- 该接口会把文件上传到飞书云空间（挂在当前多维表格 Base 下），并返回 `fileToken`。
+- 当多维表格字段类型为「附件」时，写入 record 需要使用 `[{ file_token }]`，因此 `POST /api/submissions` 的 `proofFiles` 建议传 `fileToken[]`。
+
+Headers:
+- `X-CSRF-Token: <token>`
+
+Body（multipart/form-data）：
+- `file`: 文件（字段名必须是 `file`）
+
+响应：
+```json
+{
+  "fileToken": "boxcn...",
+  "name": "proof.png",
+  "size": 1234,
+  "contentType": "image/png"
+}
+```
