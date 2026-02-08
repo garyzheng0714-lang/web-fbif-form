@@ -49,7 +49,7 @@ export function createServer() {
     });
   });
 
-  app.use('/api/csrf', csrfRouter);
+  app.use('/api/csrf', apiLimiter, csrfRouter);
   app.use('/api/submissions', apiLimiter, submissionsRouter);
   app.use('/api/uploads', apiLimiter, uploadsRouter);
 
